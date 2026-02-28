@@ -1,0 +1,98 @@
+import streamlit as st
+import fitz  # PyMuPDF
+from PIL import Image, ImageDraw, ImageFont
+import io
+import re
+
+# --- पेज की सेटिंग ---
+st.set_page_config(page_title="Flipkart Smart Label Merger", page_icon="📦")
+
+st.title("📦 Flipkart Smart Label Merger")
+st.write("अपने Flipkart Shipping Label PDF को अपलोड करें और उसे 'Tax Invoice' डिटेल्स के साथ मर्ज करें।")
+st.info("💡 टिप: यह टूल आपके डेटा को सेव नहीं करता। यह पूरी तरह सुरक्षित है।")
+
+# --- फाइल अपलोडर ---
+uploaded_file = st.file_uploader("अपना PDF लेबल यहाँ डालें", type="pdf")
+
+if uploaded_file is not None:
+    # PDF को प्रोसेस करना
+    with st.spinner('प्रोसेसिंग हो रही है...'):
+        try:
+            # 1. PDF पढ़ें
+            doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
+            page = doc[0]
+            text = page.get_text()
+
+            # 2. कीमत ढूँढें (Regex का उपयोग करके)
+            # यह पैटर्न "Total Price" या "Grand Total" के बाद नंबर को ढूंढता है
+            price_pattern = r"(Total Price|Grand Total|Total Amount)[:\s]+([\d\.]+)"
+            match = re.search(price_pattern, text, re.IGNORECASE)
+
+            if match:
+                final_price = match.group(2)
+            else:
+                # बैकअप: अगर सीधे न मिले तो टेबल के आखिरी नंबर को पकड़ने की कोशिश
+                final_price = "Check Invoice"
+
+            # 3. इमेज बनाना
+            zoom = 3  # High Quality
+            mat = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=mat)
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+            # 4. लेबल काटना (Crop)
+            width, height = img.size
+            # ऊपर का 55% हिस्सा (जहाँ लेबल होता है)
+            label_cut = img.crop((0, 0, width, int(height * 0.55)))
+
+            # 5. टेक्स्ट लिखना
+            draw = ImageDraw.Draw(label_cut)
+            
+            # फॉन्ट लोड करना
+            try:
+                # लिनक्स सर्वर के लिए बेसिक फॉन्ट
+                font = ImageFont.truetype("DejaVuSans-Bold.ttf", 50)
+            except:
+                font = ImageFont.load_default()
+
+            # जगह तय करना (Positioning)
+            text_x = 40
+            text_y = int(label_cut.height * 0.62)
+
+            display_text = f"Value: Rs. {final_price}\n(Tax Invoice Inside)"
+
+            # बैकग्राउंड बॉक्स (सफेद)
+            draw.rectangle([(text_x - 10, text_y - 10), (width - 40, text_y + 110)], fill="white")
+            # टेक्स्ट (काला)
+            draw.text((text_x, text_y), display_text, fill="black", font=font)
+            
+            # बॉर्डर
+            draw.rectangle([(0,0), (label_cut.width-1, label_cut.height-1)], outline="black", width=5)
+
+            # 6. इमेज को बाइट्स में बदलना (डाउनलोड के लिए)
+            img_byte_arr = io.BytesIO()
+            label_cut.save(img_byte_arr, format='PNG')
+            img_byte_arr = img_byte_arr.getvalue()
+
+            # --- परिणाम दिखाना ---
+            st.success("✅ लेबल तैयार है!")
+            
+            # कॉलम बनाकर दिखाएं
+            col1, col2 = st.columns(2)
+            with col1:
+                st.image(label_cut, caption="फाइनल लेबल", use_container_width=True)
+            with col2:
+                st.write("### डाउनलोड करें")
+                st.download_button(
+                    label="📥 डाउनलोड लेबल (PNG)",
+                    data=img_byte_arr,
+                    file_name=f"Smart_Label_{final_price}.png",
+                    mime="image/png"
+                )
+
+        except Exception as e:
+            st.error(f"कुछ गड़बड़ हुई: {e}")
+            st.write("कृपया सही Flipkart PDF फाइल अपलोड करें।")
+
+st.markdown("---")
+st.write("Developed with ❤️ by Mechanic37 & Devilson")
