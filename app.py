@@ -2,11 +2,11 @@ import streamlit as st
 import fitz  # PyMuPDF
 import re
 
-# --- पेज की सेटिंग (Wide Layout for Pro Look) ---
+# --- पेज की सेटिंग ---
 st.set_page_config(page_title="Flipkart Smart Label Pro", page_icon="📦", layout="wide")
 
 # ==========================================
-# ⚙️ SIDEBAR SETTINGS (PDFCroppers Style)
+# ⚙️ SIDEBAR SETTINGS
 # ==========================================
 with st.sidebar:
     st.title("⚙️ Label Settings")
@@ -14,28 +14,29 @@ with st.sidebar:
     
     st.markdown("### 🛠️ Basic Features")
     add_price = st.checkbox("✅ Print Price on Label", value=True)
-    thermal_format = st.checkbox("🖨️ 4x6 Thermal Printer Format", value=True, help="यह फालतू सफेद मार्जिन हटाकर बिल्कुल 4x6 इंच का परफेक्ट थर्मल साइज बनाएगा।")
-    keep_invoice = st.checkbox("📄 Keep Invoice (No Crop)", value=False, disabled=thermal_format, help="A4 साइज में रखने के लिए इसे चुनें (थर्मल मोड बंद करना होगा)।")
+    thermal_format = st.checkbox("🖨️ 4x6 Thermal Printer Format", value=True)
+    keep_invoice = st.checkbox("📄 Keep Invoice (No Crop)", value=False, disabled=thermal_format)
     
     st.markdown("### 📏 Advanced Crop Settings")
-    with st.expander("✂️ Adjust Crop & Text Position"):
+    with st.expander("✂️ Adjust Crop & Text Position", expanded=True):
         st.write("टेक्स्ट की जगह और पेज की कटिंग सेट करें:")
-        # थर्मल के लिए डिफ़ॉल्ट 60% सही रहता है
-        crop_percent = st.slider("✂️ Crop Percentage (%)", 40, 100, 60, disabled=keep_invoice and not thermal_format)
+        # डिफ़ॉल्ट कटिंग को 54% कर दिया गया है ताकि सिर्फ लेबल बचे, इनवॉइस कट जाए
+        crop_percent = st.slider("✂️ Crop Percentage (%)", 40, 100, 54, disabled=keep_invoice and not thermal_format)
         pos_x = st.slider("↔️ X-Axis (Left/Right)", 0, 400, 30, disabled=not add_price)
-        pos_y = st.slider("↕️ Y-Axis (Up/Down)", 0, 600, 470, disabled=not add_price)
+        # डिफ़ॉल्ट Y-Axis को 410 कर दिया है ताकि प्राइस कटे हुए हिस्से के अंदर आए
+        pos_y = st.slider("↕️ Y-Axis (Up/Down)", 0, 600, 410, disabled=not add_price)
     
     st.markdown("---")
     st.write("Powered by **Mechanic37 Tech**")
 
 
 # ==========================================
-# 🖥️ MAIN PAGE (Bulk Upload + 4x6 Thermal)
+# 🖥️ MAIN PAGE
 # ==========================================
-st.title("📦 Flipkart Smart Label Pro (Bulk + Thermal)")
-st.write("अपने Flipkart PDF अपलोड करें। यह एक साथ कई फाइलों को **मर्ज** करेगा और **थर्मल प्रिंटर (4x6)** के लिए परफेक्ट साइज बनाएगा।")
+st.title("📦 Flipkart Smart Label Pro")
+st.write("सिर्फ शिपिंग लेबल (बिना इनवॉइस के) निकालने के लिए एकदम परफेक्ट टूल।")
 
-# --- फाइल अपलोडर (Multiple Files) ---
+# --- फाइल अपलोडर ---
 uploaded_files = st.file_uploader("Drop your PDF labels here", type="pdf", accept_multiple_files=True)
 
 if uploaded_files:
@@ -71,22 +72,21 @@ if uploaded_files:
 
                 # 3. 4x6 इंच थर्मल प्रिंटर फॉर्मेट
                 if thermal_format:
-                    # 4x6 इंच को पॉइंट्स में बदलें (1 इंच = 72 पॉइंट्स) -> 288 x 432
+                    # 4x6 इंच (288 x 432 पॉइंट्स)
                     new_page = merged_pdf.new_page(width=288, height=432)
                     
-                    # Flipkart लेबल के साइड के सफेद मार्जिन हटाएं (x=15 से width-15)
+                    # सिर्फ ऊपर का 54% हिस्सा उठाएं और फालतू मार्जिन काटें
                     crop_height = page_rect.height * (crop_percent / 100.0)
                     clip_rect = fitz.Rect(15, 15, page_rect.width - 15, crop_height)
                     
-                    # कटे हुए हिस्से को नई 4x6 पेज पर स्ट्रेच/फिट कर दें
+                    # उसे 4x6 पेज पर फिट करें
                     new_page.show_pdf_page(new_page.rect, doc, 0, clip=clip_rect)
                     
-                    # प्रीव्यू के लिए
                     if index == 0:
                         mat = fitz.Matrix(2, 2)
                         preview_pix = new_page.get_pixmap(matrix=mat)
                 
-                # 4. नॉर्मल मोड (अगर थर्मल टिक नहीं है)
+                # 4. नॉर्मल मोड
                 else:
                     if not keep_invoice:
                         crop_height = page_rect.height * (crop_percent / 100.0)
@@ -100,33 +100,28 @@ if uploaded_files:
 
                 doc.close()
 
-            # नई Merged PDF फाइल को सेव करना
             pdf_bytes = merged_pdf.write()
             merged_pdf.close()
 
-            st.success(f"✅ {len(uploaded_files)} PDF सफलतापूर्वक प्रोसेस और मर्ज हो गए हैं!")
+            st.success(f"✅ {len(uploaded_files)} PDF सफलतापूर्वक प्रोसेस हो गए हैं!")
 
-            # --- परिणाम और डाउनलोड बटन ---
             col1, col2 = st.columns([1, 1])
             with col1:
                 if preview_pix:
-                    st.image(preview_pix.tobytes("png"), caption=f"Thermal 4x6 Preview (Page 1)", use_container_width=True)
+                    st.image(preview_pix.tobytes("png"), caption=f"Perfect Crop Preview", use_container_width=True)
             with col2:
-                st.write("### 🎉 Your Thermal Labels are Ready!")
+                st.write("### 🎉 Your Labels are Ready!")
                 st.write(f"**📦 Total Orders:** {len(uploaded_files)}")
                 if total_price_sum > 0:
                     st.write(f"**💰 Total Order Value:** Rs. {total_price_sum:.2f}")
                 
                 st.download_button(
-                    label=f"📥 Download 4x6 Thermal PDF",
+                    label=f"📥 Download Cropped PDF",
                     data=pdf_bytes,
-                    file_name=f"Smart_Labels_4x6_Merged.pdf",
+                    file_name=f"Smart_Labels_Merged.pdf",
                     mime="application/pdf",
                     use_container_width=True
                 )
 
         except Exception as e:
             st.error(f"कुछ गड़बड़ हुई: {e}")
-
-st.markdown("---")
-st.write("Developed with ❤️ by Mechanic37 & Devilson")
