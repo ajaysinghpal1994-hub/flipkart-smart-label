@@ -4,11 +4,11 @@ import fitz  # PyMuPDF
 # --- पेज सेटिंग ---
 st.set_page_config(page_title="Flipkart Clean Label", page_icon="📦", layout="wide")
 
-st.title("📦 Flipkart Perfect Clean Label (No Dashed Line)")
-st.write("यह टूल बिंदीदार लाइन और उसके नीचे के सभी टेक्स्ट को पूरी तरह हटा देगा।")
+st.title("📦 Flipkart Final Clean Label (No Dashed Line)")
+st.write("यह वर्जन बिंदीदार लाइन और उसके नीचे के हिस्से को पूरी तरह से काट देगा।")
 
-# --- सटीक कटिंग (46.3% करने से बिंदीदार लाइन पूरी तरह गायब हो जाएगी) ---
-crop_percent = 46.3  
+# --- अब इसे 44% पर सेट किया है ताकि नीचे की लाइन बिल्कुल न आए ---
+crop_percent = 44.0  
 
 uploaded_files = st.file_uploader("Flipkart PDF यहाँ अपलोड करें", type="pdf", accept_multiple_files=True)
 
@@ -22,19 +22,19 @@ if uploaded_files:
                 page = doc[0]
                 page_rect = page.rect
                 
-                # Dashed line के ठीक ऊपर तक का हिस्सा (Original Width के साथ)
+                # ओरिजिनल विड्थ के साथ और भी छोटा क्रॉप बॉक्स
                 crop_rect = fitz.Rect(0, 0, page_rect.width, page_rect.height * (crop_percent / 100.0))
                 
-                # नया पेज बनाना
+                # नया पेज बनाना (बिना किसी स्ट्रेचिंग के)
                 new_page = merged_pdf.new_page(width=page_rect.width, height=crop_rect.height)
                 
-                # बिना स्ट्रेच किए लेबल को फिट करना
+                # लेबल को ओरिजिनल साइज में रखना
                 new_page.show_pdf_page(new_page.rect, doc, 0, clip=crop_rect)
                 doc.close()
 
             pdf_bytes = merged_pdf.write()
             
-            st.success(f"✅ {len(uploaded_files)} लेबल अब पूरी तरह क्लीन हैं!")
+            st.success(f"✅ {len(uploaded_files)} लेबल्स पूरी तरह से साफ हो गए हैं!")
             
             col1, col2 = st.columns([1, 1])
             with col1:
@@ -46,7 +46,7 @@ if uploaded_files:
             with col2:
                 st.write("### डाउनलोड करें:")
                 st.download_button(
-                    label="📥 डाउनलोड क्लीन शिपिंग लेबल (PDF)",
+                    label="📥 डाउनलोड परफेक्ट क्लीन लेबल (PDF)",
                     data=pdf_bytes,
                     file_name="Flipkart_Final_Clean_Labels.pdf",
                     mime="application/pdf",
