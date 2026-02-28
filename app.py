@@ -52,4 +52,81 @@ if uploaded_files:
                 page_rect = page.rect
 
                 # 1. कीमत ढूँढें
-                price_pattern = r"(Total Price
+                price_pattern = r"(Total Price|Grand Total|Total Amount)[:\s]+([\d\.]+)"
+                match = re.search(price_pattern, text, re.IGNORECASE)
+                final_price = match.group(2) if match else "Check Invoice"
+
+                if match:
+                    try:
+                        total_price_sum += float(final_price)
+                    except:
+                        pass
+
+                # 2. कीमत लिखें
+                if add_price:
+                    display_text = f"Value: Rs. {final_price} (Tax Invoice Inside)"
+                    rect = fitz.Rect(pos_x - 5, pos_y - 18, pos_x + 320, pos_y + 5)
+                    page.draw_rect(rect, color=(1, 1, 1), fill=(1, 1, 1)) 
+                    page.insert_text(fitz.Point(pos_x, pos_y), display_text, fontsize=16, color=(0, 0, 0))
+
+                # 3. 4x6 इंच थर्मल प्रिंटर फॉर्मेट
+                if thermal_format:
+                    # 4x6 इंच को पॉइंट्स में बदलें (1 इंच = 72 पॉइंट्स) -> 288 x 432
+                    new_page = merged_pdf.new_page(width=288, height=432)
+                    
+                    # Flipkart लेबल के साइड के सफेद मार्जिन हटाएं (x=15 से width-15)
+                    crop_height = page_rect.height * (crop_percent / 100.0)
+                    clip_rect = fitz.Rect(15, 15, page_rect.width - 15, crop_height)
+                    
+                    # कटे हुए हिस्से को नई 4x6 पेज पर स्ट्रेच/फिट कर दें
+                    new_page.show_pdf_page(new_page.rect, doc, 0, clip=clip_rect)
+                    
+                    # प्रीव्यू के लिए
+                    if index == 0:
+                        mat = fitz.Matrix(2, 2)
+                        preview_pix = new_page.get_pixmap(matrix=mat)
+                
+                # 4. नॉर्मल मोड (अगर थर्मल टिक नहीं है)
+                else:
+                    if not keep_invoice:
+                        crop_height = page_rect.height * (crop_percent / 100.0)
+                        page.set_cropbox(fitz.Rect(0, 0, page_rect.width, crop_height))
+                    
+                    merged_pdf.insert_pdf(doc)
+                    
+                    if index == 0:
+                        mat = fitz.Matrix(2, 2)
+                        preview_pix = merged_pdf[0].get_pixmap(matrix=mat)
+
+                doc.close()
+
+            # नई Merged PDF फाइल को सेव करना
+            pdf_bytes = merged_pdf.write()
+            merged_pdf.close()
+
+            st.success(f"✅ {len(uploaded_files)} PDF सफलतापूर्वक प्रोसेस और मर्ज हो गए हैं!")
+
+            # --- परिणाम और डाउनलोड बटन ---
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                if preview_pix:
+                    st.image(preview_pix.tobytes("png"), caption=f"Thermal 4x6 Preview (Page 1)", use_container_width=True)
+            with col2:
+                st.write("### 🎉 Your Thermal Labels are Ready!")
+                st.write(f"**📦 Total Orders:** {len(uploaded_files)}")
+                if total_price_sum > 0:
+                    st.write(f"**💰 Total Order Value:** Rs. {total_price_sum:.2f}")
+                
+                st.download_button(
+                    label=f"📥 Download 4x6 Thermal PDF",
+                    data=pdf_bytes,
+                    file_name=f"Smart_Labels_4x6_Merged.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+
+        except Exception as e:
+            st.error(f"कुछ गड़बड़ हुई: {e}")
+
+st.markdown("---")
+st.write("Developed with ❤️ by Mechanic37 & Devilson")
