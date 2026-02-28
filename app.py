@@ -28,64 +28,88 @@ with st.sidebar:
 
 
 # ==========================================
-# 🖥️ MAIN PAGE (Upload & Preview)
+# 🖥️ MAIN PAGE (Bulk Upload & Merge)
 # ==========================================
-st.title("📦 Flipkart Smart Label Pro")
-st.write("अपने Flipkart PDF को अपलोड करें। बाईं तरफ (Sidebar) से अपनी सेटिंग चुनें।")
+st.title("📦 Flipkart Smart Label Pro (Bulk Mode)")
+st.write("अपने Flipkart PDF को अपलोड करें। आप **एक साथ कई PDF** (Bulk Upload) चुन सकते हैं।")
 
-# --- फाइल अपलोडर (Drag & Drop) ---
-uploaded_file = st.file_uploader("Drop your PDF label here", type="pdf")
+# --- फाइल अपलोडर (Multiple Files) ---
+# accept_multiple_files=True करने से हम एक साथ कई फाइल डाल सकते हैं
+uploaded_files = st.file_uploader("Drop your PDF labels here", type="pdf", accept_multiple_files=True)
 
-if uploaded_file is not None:
-    with st.spinner('प्रोसेसिंग हो रही है...'):
+if uploaded_files: # अगर फाइलें अपलोड की गई हैं
+    with st.spinner(f'प्रोसेसिंग हो रही है ({len(uploaded_files)} फाइल्स)...'):
         try:
-            # 1. PDF पढ़ें
-            doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
-            page = doc[0]
-            text = page.get_text()
+            # मर्ज करने के लिए एक नई खाली PDF बनाना
+            merged_pdf = fitz.open()
+            total_price_sum = 0.0 # टोटल अमाउंट जोड़ने के लिए
+            preview_pix = None
 
-            # 2. कीमत ढूँढें
-            price_pattern = r"(Total Price|Grand Total|Total Amount)[:\s]+([\d\.]+)"
-            match = re.search(price_pattern, text, re.IGNORECASE)
-            final_price = match.group(2) if match else "Check Invoice"
+            # हर एक अपलोड की गई फाइल पर लूप चलाना
+            for index, file in enumerate(uploaded_files):
+                doc = fitz.open(stream=file.read(), filetype="pdf")
+                page = doc[0]
+                text = page.get_text()
 
-            # 3. अगर "Print Price" टिक है, तो टेक्स्ट लिखें
-            if add_price:
-                display_text = f"Value: Rs. {final_price} (Tax Invoice Inside)"
-                # टेक्स्ट के पीछे सफेद बॉक्स
-                rect = fitz.Rect(pos_x - 5, pos_y - 18, pos_x + 320, pos_y + 5)
-                page.draw_rect(rect, color=(1, 1, 1), fill=(1, 1, 1)) 
-                # ब्लैक टेक्स्ट
-                page.insert_text(fitz.Point(pos_x, pos_y), display_text, fontsize=16, color=(0, 0, 0))
+                # कीमत ढूँढें
+                price_pattern = r"(Total Price|Grand Total|Total Amount)[:\s]+([\d\.]+)"
+                match = re.search(price_pattern, text, re.IGNORECASE)
+                final_price = match.group(2) if match else "Check Invoice"
 
-            # 4. अगर "Keep Invoice" टिक नहीं है, तो क्रॉप करें (SKU बचाने के लिए)
-            if not keep_invoice:
-                page_rect = page.rect
-                crop_height = page_rect.height * (crop_percent / 100.0)
-                page.set_cropbox(fitz.Rect(0, 0, page_rect.width, crop_height))
+                # टोटल अमाउंट कैलकुलेट करें
+                if match:
+                    try:
+                        total_price_sum += float(final_price)
+                    except:
+                        pass
 
-            # 5. नई PDF फाइल को सेव करना
-            pdf_bytes = doc.write()
+                # टेक्स्ट लिखें
+                if add_price:
+                    display_text = f"Value: Rs. {final_price} (Tax Invoice Inside)"
+                    rect = fitz.Rect(pos_x - 5, pos_y - 18, pos_x + 320, pos_y + 5)
+                    page.draw_rect(rect, color=(1, 1, 1), fill=(1, 1, 1)) 
+                    page.insert_text(fitz.Point(pos_x, pos_y), display_text, fontsize=16, color=(0, 0, 0))
 
-            st.success("✅ PDF सफलतापूर्वक तैयार हो गई है!")
+                # क्रॉप करें
+                if not keep_invoice:
+                    page_rect = page.rect
+                    crop_height = page_rect.height * (crop_percent / 100.0)
+                    page.set_cropbox(fitz.Rect(0, 0, page_rect.width, crop_height))
 
-            # --- परिणाम और डाउनलोड बटन (Professional Look) ---
+                # स्क्रीन पर दिखाने के लिए सिर्फ पहले पेज की फोटो लें
+                if index == 0:
+                    zoom = 2
+                    mat = fitz.Matrix(zoom, zoom)
+                    preview_pix = page.get_pixmap(matrix=mat)
+
+                # प्रोसेस किए गए पेज को हमारी फाइनल (Merged) PDF में जोड़ दें
+                merged_pdf.insert_pdf(doc)
+                doc.close()
+
+            # नई Merged PDF फाइल को सेव करना
+            pdf_bytes = merged_pdf.write()
+            merged_pdf.close()
+
+            st.success(f"✅ {len(uploaded_files)} PDF सफलतापूर्वक मर्ज हो गए हैं!")
+
+            # --- परिणाम और डाउनलोड बटन ---
             col1, col2 = st.columns([1, 1])
             with col1:
-                # Preview Image
-                zoom = 2
-                mat = fitz.Matrix(zoom, zoom)
-                pix = page.get_pixmap(matrix=mat)
-                st.image(pix.tobytes("png"), caption="Live Preview", use_container_width=True)
+                if preview_pix:
+                    st.image(preview_pix.tobytes("png"), caption=f"Preview (Page 1 of {len(uploaded_files)})", use_container_width=True)
             with col2:
-                st.write("### 🎉 Your Label is Ready!")
-                st.write(f"**Detected Price:** Rs. {final_price}")
-                st.write("आपकी फाइल थर्मल प्रिंटर के लिए एकदम सही साइज़ में तैयार है।")
-                st.markdown("<br>", unsafe_allow_html=True) # थोड़ा गैप देने के लिए
+                st.write("### 🎉 Your Bulk Label is Ready!")
+                st.write(f"**📦 Total Orders Processed:** {len(uploaded_files)}")
+                if total_price_sum > 0:
+                    st.write(f"**💰 Total Order Value:** Rs. {total_price_sum:.2f}")
+                
+                st.write("आपकी फाइल प्रिंटर के लिए एकदम तैयार है।")
+                st.markdown("<br>", unsafe_allow_html=True) 
+                
                 st.download_button(
-                    label="📥 Download Ready Label (PDF)",
+                    label=f"📥 Download Merged PDF ({len(uploaded_files)} Labels)",
                     data=pdf_bytes,
-                    file_name=f"Smart_Label_{final_price}.pdf",
+                    file_name=f"Smart_Labels_Merged_{len(uploaded_files)}.pdf",
                     mime="application/pdf",
                     use_container_width=True
                 )
