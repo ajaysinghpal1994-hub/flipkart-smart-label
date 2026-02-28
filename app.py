@@ -1,99 +1,81 @@
 import streamlit as st
 import fitz  # PyMuPDF
-from PIL import Image, ImageDraw, ImageFont
-import io
 import re
 
 # --- पेज की सेटिंग ---
-st.set_page_config(page_title="Flipkart Smart Label Merger", page_icon="📦")
+st.set_page_config(page_title="Flipkart Smart Label Merger", page_icon="📦", layout="centered")
 
-st.title("📦 Flipkart Smart Label Merger")
-st.write("अपने Flipkart Shipping Label PDF को अपलोड करें और उसे 'Tax Invoice' डिटेल्स के साथ मर्ज करें।")
-st.info("💡 टिप: यह टूल आपके डेटा को सेव नहीं करता। यह पूरी तरह सुरक्षित है।")
+st.title("📦 Flipkart Smart Label Merger (PDF Version)")
+st.write("अपने Flipkart PDF को अपलोड करें। यह उसमें 'Price' जोड़कर आपको वापस PDF फाइल ही देगा।")
+
+# --- सेटिंग स्लाइडर्स ---
+st.write("### ⚙️ सेटिंग (टेक्स्ट की जगह और कटिंग सेट करें)")
+col_x, col_y, col_crop = st.columns(3)
+with col_x:
+    pos_x = st.slider("↔️ बाएँ/दाएँ (X)", 0, 400, 30) 
+with col_y:
+    pos_y = st.slider("↕️ ऊपर/नीचे (Y)", 0, 600, 470)
+with col_crop:
+    # 65% रखने पर आमतौर पर SKU नहीं कटता
+    crop_percent = st.slider("✂️ कितना काटना है (%)", 50, 100, 65) 
 
 # --- फाइल अपलोडर ---
 uploaded_file = st.file_uploader("अपना PDF लेबल यहाँ डालें", type="pdf")
 
 if uploaded_file is not None:
-    # PDF को प्रोसेस करना
     with st.spinner('प्रोसेसिंग हो रही है...'):
         try:
-            # 1. PDF पढ़ें
+            # 1. PDF पढ़ें (बिना इमेज में बदले)
             doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
             page = doc[0]
             text = page.get_text()
 
-            # 2. कीमत ढूँढें (Regex का उपयोग करके)
-            # यह पैटर्न "Total Price" या "Grand Total" के बाद नंबर को ढूंढता है
+            # 2. कीमत ढूँढें
             price_pattern = r"(Total Price|Grand Total|Total Amount)[:\s]+([\d\.]+)"
             match = re.search(price_pattern, text, re.IGNORECASE)
+            final_price = match.group(2) if match else "Check Invoice"
 
-            if match:
-                final_price = match.group(2)
-            else:
-                # बैकअप: अगर सीधे न मिले तो टेबल के आखिरी नंबर को पकड़ने की कोशिश
-                final_price = "Check Invoice"
-
-            # 3. इमेज बनाना
-            zoom = 3  # High Quality
-            mat = fitz.Matrix(zoom, zoom)
-            pix = page.get_pixmap(matrix=mat)
-            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-
-            # 4. लेबल काटना (Crop)
-            width, height = img.size
-            # ऊपर का 55% हिस्सा (जहाँ लेबल होता है)
-            label_cut = img.crop((0, 0, width, int(height * 0.55)))
-
-            # 5. टेक्स्ट लिखना
-            draw = ImageDraw.Draw(label_cut)
+            # 3. PDF में सीधे टेक्स्ट लिखना
+            display_text = f"Value: Rs. {final_price} (Tax Invoice Inside)"
             
-            # फॉन्ट लोड करना
-            try:
-                # लिनक्स सर्वर के लिए बेसिक फॉन्ट
-                font = ImageFont.truetype("DejaVuSans-Bold.ttf", 50)
-            except:
-                font = ImageFont.load_default()
-
-            # जगह तय करना (Positioning)
-            text_x = 40
-            text_y = int(label_cut.height * 0.62)
-
-            display_text = f"Value: Rs. {final_price}\n(Tax Invoice Inside)"
-
-            # बैकग्राउंड बॉक्स (सफेद)
-            draw.rectangle([(text_x - 10, text_y - 10), (width - 40, text_y + 110)], fill="white")
-            # टेक्स्ट (काला)
-            draw.text((text_x, text_y), display_text, fill="black", font=font)
+            # टेक्स्ट के पीछे एक सफेद बॉक्स बनाना (ताकि पीछे की लाइन छिप जाए)
+            # Box Coordinates (x0, y0, x1, y1)
+            rect = fitz.Rect(pos_x - 5, pos_y - 18, pos_x + 320, pos_y + 5)
+            page.draw_rect(rect, color=(1, 1, 1), fill=(1, 1, 1)) 
             
-            # बॉर्डर
-            draw.rectangle([(0,0), (label_cut.width-1, label_cut.height-1)], outline="black", width=5)
+            # डार्क और बोल्ड टेक्स्ट लिखना (helv-bo = Helvetica Bold)
+            page.insert_text(fitz.Point(pos_x, pos_y), display_text, fontsize=16, fontname="helv-bo", color=(0, 0, 0))
 
-            # 6. इमेज को बाइट्स में बदलना (डाउनलोड के लिए)
-            img_byte_arr = io.BytesIO()
-            label_cut.save(img_byte_arr, format='PNG')
-            img_byte_arr = img_byte_arr.getvalue()
+            # 4. PDF को काटना (Crop) - SKU बचाने के लिए
+            page_rect = page.rect
+            crop_height = page_rect.height * (crop_percent / 100.0)
+            # नया क्रॉप बॉक्स सेट करें
+            page.set_cropbox(fitz.Rect(0, 0, page_rect.width, crop_height))
+
+            # 5. नई PDF फाइल को सेव करना
+            pdf_bytes = doc.write()
+
+            st.success("✅ PDF तैयार है! अब आपका SKU नहीं कटेगा।")
 
             # --- परिणाम दिखाना ---
-            st.success("✅ लेबल तैयार है!")
-            
-            # कॉलम बनाकर दिखाएं
             col1, col2 = st.columns(2)
             with col1:
-                st.image(label_cut, caption="फाइनल लेबल", use_container_width=True)
+                # स्क्रीन पर दिखाने के लिए इमेज बना रहे हैं, लेकिन डाउनलोड PDF ही होगा
+                zoom = 2
+                mat = fitz.Matrix(zoom, zoom)
+                pix = page.get_pixmap(matrix=mat)
+                st.image(pix.tobytes("png"), caption="PDF Preview (चेक करें)", use_container_width=True)
             with col2:
-                st.write("### डाउनलोड करें")
+                st.write("### यहाँ से डाउनलोड करें")
                 st.download_button(
-                    label="📥 डाउनलोड लेबल (PNG)",
-                    data=img_byte_arr,
-                    file_name=f"Smart_Label_{final_price}.png",
-                    mime="image/png"
+                    label="📥 डाउनलोड लेबल (PDF)",
+                    data=pdf_bytes,
+                    file_name=f"Smart_Label_{final_price}.pdf",
+                    mime="application/pdf"
                 )
 
         except Exception as e:
             st.error(f"कुछ गड़बड़ हुई: {e}")
-            st.write("कृपया सही Flipkart PDF फाइल अपलोड करें।")
 
 st.markdown("---")
-
 st.write("Developed with ❤️ by Mechanic37 & Devilson")
